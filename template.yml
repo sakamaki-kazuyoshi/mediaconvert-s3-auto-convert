@@ -1,0 +1,199 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: MediaConvert environment for verification.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Common setting
+        Parameters:
+          - SystemName
+          - EnvType
+      - Label:
+          default: MediaConvert setting
+        Parameters:
+          - EndPointUrl
+
+Parameters:
+  SystemName:
+    Type: String
+    Description: SystemName of your website.
+    Default: test
+  EnvType:
+    Type: String
+    AllowedValues:
+      - prd
+      - dev
+      - stg
+    Default: dev
+  EndPointUrl:
+    Type: String
+    Default: https://xxxxxxxxx.mediaconvert.ap-northeast-1.amazonaws.com
+
+Resources:
+# ------------------------------------------------------------#
+# S3
+# ------------------------------------------------------------#
+  InputBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${SystemName}-${EnvType}-media-convert-input-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LogBucket
+        LogFilePrefix: !Sub ${SystemName}-${EnvType}-media-convert-input-${AWS::AccountId}/
+
+  OutputBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${SystemName}-${EnvType}-media-convert-output-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LogBucket
+        LogFilePrefix: !Sub ${SystemName}-${EnvType}-media-convert-output-${AWS::AccountId}/
+
+  LogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${SystemName}-${EnvType}-media-convert-log-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: Delete-After-400days
+            Status: Enabled
+            ExpirationInDays: 400
+      AccessControl: LogDeliveryWrite
+
+# ------------------------------------------------------------#
+# Lambda Function
+# ------------------------------------------------------------#
+  LambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${SystemName}-${EnvType}-start-media-convert-job
+      Description: Running an Elemental MediaConvert job
+      CodeUri: functions/start-media-convert-job/
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Timeout: 300
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Environment:
+        Variables:
+          ENDPOINT_URL : !Ref EndPointUrl
+          OUTPUT_BUCKET : !Ref OutputBucket
+          MEDIA_CONVERT_JOB_TEMPLATE_ARN : !GetAtt MediaConvertJobTemplate.Arn
+          MEDIA_CONVERT_ROLE_ARN : !GetAtt MediaConvertServiceRole.Arn
+          MEDIA_CONVERT_QUE : !Sub arn:aws:mediaconvert:ap-northeast-1:${AWS::AccountId}:queues/Default
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: !Ref InputBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .mp4
+
+# ------------------------------------------------------------#
+# IAM
+# ------------------------------------------------------------#
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${SystemName}-${EnvType}-lambda-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref MediaConvertJobExecutePolicy
+
+  MediaConvertJobExecutePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub ${SystemName}-${EnvType}-media-convert-execute-policy
+      Path: /
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+              - mediaconvert:CreateJob
+            Resource: '*'
+
+  MediaConvertServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${SystemName}-${EnvType}-media-convert-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - mediaconvert.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /service-role/
+      ManagedPolicyArns:
+        - !Ref MediaConvertJobPolicy
+
+  MediaConvertJobPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub ${SystemName}-${EnvType}-media-convert-policy
+      Path: /
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:Get*
+              - s3:List*
+            Resource:
+              - !Sub arn:aws:s3:::${SystemName}-${EnvType}-media-convert-input-${AWS::AccountId}/*
+          - Effect: Allow
+            Action:
+              - s3:Put*
+            Resource:
+              - !Sub arn:aws:s3:::${SystemName}-${EnvType}-media-convert-output-${AWS::AccountId}/*
+
+# ------------------------------------------------------------#
+# MediaConvert
+# ------------------------------------------------------------#
+  MediaConvertJobTemplate:
+    Type: AWS::MediaConvert::JobTemplate
+    Properties: 
+      Name: !Sub ${SystemName}-${EnvType}-media-convert-job-template
+      Category: HLS
+      Description: Job template for converting mp4 to HLS
+      SettingsJson:
+        Fn::Transform:
+          Name: AWS::Include
+          Parameters:
+            Location: job-template/settings.json
+

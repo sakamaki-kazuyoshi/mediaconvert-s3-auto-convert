@@ -1,0 +1,22 @@
+{
+    "OutputGroups": [
+        {
+            "OutputGroupSettings": {
+                "Type": "HLS_GROUP_SETTINGS",
+                "HlsGroupSettings": {
+                    "Destination": ""
+                }
+            }
+        }
+    ],
+    "Inputs": [
+        {
+            "AudioSelectors": {
+                "Audio Selector 1": {
+                    "DefaultSelection": "DEFAULT"
+                }
+            },
+            "FileInput": ""
+        }
+    ]
+}

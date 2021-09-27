@@ -1,0 +1,49 @@
+{
+    "AdAvailOffset": 0,
+    "OutputGroups": [
+        {
+            "Name": "Apple HLS",
+            "OutputGroupSettings": {
+                "HlsGroupSettings": {
+                    "MinSegmentLength": 0,
+                    "SegmentLength": 10
+                },
+                "Type": "HLS_GROUP_SETTINGS"
+            },
+            "Outputs": [
+                {
+                    "AudioDescriptions": [
+                        {
+                            "CodecSettings": {
+                                "AacSettings": {
+                                    "Bitrate": 96000,
+                                    "CodingMode": "CODING_MODE_2_0",
+                                    "SampleRate": 48000
+                                },
+                                "Codec": "AAC"
+                            }
+                        }
+                    ],
+                    "ContainerSettings": {
+                        "Container": "M3U8",
+                        "M3u8Settings": {}
+                    },
+                    "NameModifier": "_hls",
+                    "OutputSettings": {
+                        "HlsSettings": {}
+                    },
+                    "VideoDescription": {
+                        "CodecSettings": {
+                            "Codec": "H_264",
+                            "H264Settings": {
+                                "MaxBitrate": 1000,
+                                "RateControlMode": "QVBR",
+                                "SceneChangeDetect": "TRANSITION_DETECTION"
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}
